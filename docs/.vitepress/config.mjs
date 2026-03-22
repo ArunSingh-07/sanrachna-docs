@@ -4,6 +4,9 @@ export default defineConfig({
   title: "Sanrachna",
   description: "Privacy-First AI Productivity Platform",
   themeConfig: {
+    search: {
+      provider: 'local'
+    },
     nav: [
       { text: 'Home', link: '/' },
       { text: 'Research', link: '/research/proposal' }
@@ -18,7 +21,11 @@ export default defineConfig({
       }
     ],
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/yourusername/sanrachna-docs' }
-    ]
+      { icon: 'github', link: 'https://github.com/ArunSingh-07/sanrachna-research' }
+    ],
+    footer: {
+      message: 'Released under the MIT License.',
+      copyright: 'Copyright © 2024-present Sanrachna Research'
+    }
   }
 })
