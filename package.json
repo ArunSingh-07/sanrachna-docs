@@ -5,8 +5,11 @@
   "description": "Research documentation for Sanrachna",
   "scripts": {
     "dev": "vitepress dev docs",
+    "docs:dev": "vitepress dev docs",
     "build": "vitepress build docs",
-    "preview": "vitepress preview docs"
+    "docs:build": "vitepress build docs",
+    "preview": "vitepress preview docs",
+    "docs:preview": "vitepress preview docs"
   },
   "devDependencies": {
     "vitepress": "^1.0.0"
