@@ -4,7 +4,7 @@ layout: home
 hero:
   name: "Sanrachna"
   text: "Local-First AI Productivity Platform"
-  tagline: "An architectural research project focused on offline-only AI inference and privacy-preserving productivity tools."
+  tagline: "An architectural study on privacy-first AI, offline productivity, and edge-inference systems."
   actions:
     - theme: brand
       text: Technical Research Report
