@@ -92,25 +92,39 @@ graph TD
 ```
 
 ## 5. Execution Pipeline
-The Sanrachna pipeline is designed to be deterministic. Unlike standard chatbots, the system constrains model output to structured formats.
+The Sanrachna pipeline is designed to be deterministic. Unlike standard chatbots, the system constrains model output to structured formats. The following diagram illustrates the complete synthesis loop, including the re-prompting mechanism that fires when the LLM produces an invalid schema.
 
-```text
-[ USER INPUT ] --> [ PROMPT TEMPLATE ] --> [ LOCAL LLM ]
-                                                |
-                                                v
-[ JSON DEFINITION ] <--- [ VALIDATION LAYER ] <--- [ OUTPUT ]
-      |
-      +------> [ SQLITE DB ]
-      |
-      +------> [ REACT FACTORY ] --> [ RENDERED UI ]
+#### Figure 1: Deterministic GenUI Synthesis Pipeline
+
+```mermaid
+flowchart TD
+    A["User Natural Language Input"] --> B["Prompt Template Engine"]
+    B --> C["Local LLM (Ollama)"]
+    C --> D["Raw JSON Output"]
+    D --> E{"Schema Validator"}
+    E -- "Valid Schema" --> F["SQLite Storage"]
+    E -- "Valid Schema" --> G["React Component Factory"]
+    G --> H["Rendered Application UI"]
+    E -- "Invalid Schema" --> I["Error Log + Re-prompt"]
+    I --> B
+
+    style A fill:#1a1a2e,stroke:#e94560,color:#fff
+    style C fill:#1a1a2e,stroke:#0f3460,color:#fff
+    style E fill:#16213e,stroke:#e94560,color:#fff
+    style F fill:#0f3460,stroke:#53d8fb,color:#fff
+    style H fill:#0f3460,stroke:#53d8fb,color:#fff
+    style I fill:#4a0e0e,stroke:#e94560,color:#fff
 ```
+
+The deterministic loop ensures that no invalid schema reaches the database or the UI layer. If the LLM output fails validation, the system automatically constructs a corrective prompt and re-submits to the model.
 
 ### 5.1. Synthesis Workflow
 
 1.  **Intent Capture:** The user describes a need (e.g., "I need a medication tracker with a side-effects log").
 2.  **Prompt Engineering:** The core engine wraps this intent in a template that requires a JSON response matching a specific meta-schema.
 3.  **Local Inference:** The LLM generates the JSON, defining the fields, data types, and layout rules.
-4.  **Hardware Acceleration:** The system uses local GPU/NPU resources via Ollama to minimize processing time.
+4.  **Validation Gate:** The schema validator checks the output against the meta-schema. On failure, the system re-prompts the LLM with error context.
+5.  **Hardware Acceleration:** The system uses local GPU/NPU resources via Ollama to minimize processing time.
 
 ## 6. Automated Application Generation
 In this framework, the LLM acts as an architect rather than just a writer. It creates functional "mini-applications" at runtime.
@@ -125,7 +139,43 @@ The React layer includes a factory that translates the generated JSON into high-
 *   `list` structures map to draggable interfaces.
 
 ## 7. Security and Sandboxing
-Security is maintained through strict local boundaries:
+Security is maintained through strict local boundaries. The following diagram illustrates the data sovereignty boundary, showing exactly which components remain local and what minimal metadata crosses the network.
+
+#### Figure 2: Data Sovereignty Boundary
+
+```mermaid
+flowchart LR
+    subgraph LOCAL["Local Device (Privacy Boundary)"]
+        direction TB
+        UI["React UI"]
+        BRIDGE["Tauri IPC Bridge"]
+        CORE["Rust Core Engine"]
+        DB[("SQLite (Encrypted)")]
+        LLM["Ollama LLM (Llama 3 / Mistral)"]
+
+        UI <--> BRIDGE
+        BRIDGE <--> CORE
+        CORE <--> DB
+        CORE <--> LLM
+    end
+
+    subgraph EXTERNAL["External Network"]
+        direction TB
+        SYNC["Sync Relay (Events Only)"]
+    end
+
+    CORE -- "Encrypted Event Deltas Only" --> SYNC
+    SYNC -- "Missing Event IDs" --> CORE
+
+    style LOCAL fill:#0a1628,stroke:#53d8fb,color:#fff
+    style EXTERNAL fill:#1a0a0a,stroke:#e94560,color:#fff
+    style DB fill:#0f3460,stroke:#53d8fb,color:#fff
+    style LLM fill:#1a1a2e,stroke:#0f3460,color:#fff
+    style SYNC fill:#4a0e0e,stroke:#e94560,color:#fff
+```
+
+Raw user data, model weights, and inference outputs never leave the local device. The only data that crosses the network boundary consists of encrypted event deltas used for multi-device synchronization.
+
 *   **Isolation:** The AI engine has no network access during processing.
 *   **Validation:** Every model output is checked against a rigid schema before it touches the database.
 *   **Encryption:** All local data is stored in an encrypted partition managed by the core engine.
@@ -138,18 +188,35 @@ Instead of syncing the database itself, the system communicates "events"—atomi
 
 ### 8.2. Global Consistency
 
-```text
-[ Desktop Host ]           [ Client A ]           [ Client B ]
-      |                        |                      |
-      |  <-- Sync Request (E1) --  |                      |
-      |  -- Delta Response (E2) -> |                      |
-      |                        |                      |
-      |  <------------------- Sync Request (E1, E2) ---  |
-      |  -- Delta Response (E3) ---------------------->  |
+The following sequence diagram illustrates the delta-based synchronization protocol between a mobile client and the desktop host, mediated by an optional sync relay.
+
+#### Figure 3: P2P Synchronization Flow with Lamport Timestamps
+
+```mermaid
+sequenceDiagram
+    participant MC as Mobile Client
+    participant SR as Sync Relay
+    participant DH as Desktop Host
+
+    MC->>SR: SyncRequest(last_event_id=E3, lamport_ts=7)
+    SR->>DH: Forward SyncRequest
+    DH->>DH: Compute delta (events after E3)
+    DH-->>SR: DeltaResponse(events=[E4, E5, E6], lamport_ts=10)
+    SR-->>MC: Forward DeltaResponse
+    MC->>MC: Apply events E4, E5, E6 in Lamport order
+    MC->>MC: Update local Lamport clock to 10
+
+    Note over MC,DH: Eventually Consistent State Achieved
+
+    MC->>SR: SyncRequest(last_event_id=E6, lamport_ts=10)
+    SR->>DH: Forward SyncRequest
+    DH-->>SR: DeltaResponse(events=[], lamport_ts=10)
+    SR-->>MC: No new events - state is current
 ```
 
 1.  **Ordering**: Logical clocks, specifically Lamport Timestamps (Lamport, 1978), ensure that events are ordered correctly across all devices. Modern refinements in collaborative correctness, such as those proposed by Weidner and Kleppmann (2025), further minimize interleaving issues in multi-device logs.
 2.  **Delta Exchange**: Devices only exchange the specific events they are missing, reducing bandwidth and allowing for offline conflict resolution.
+3.  **Idempotent Convergence**: Repeated sync requests with no new events confirm that all devices have reached an eventually consistent state.
 
 ## 9. Performance Evaluation
 The system was tested across several metrics:
